@@ -1,0 +1,21 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+.kotlin/
+
+# IDEs
+.idea/
+*.iml
+out/
+.vscode/
+
+# Logs
+*.log
+
+# DevDays
+node_modules/
+.slidev/
+.DS_Store
+# Other sessions' git worktrees live here; never commit them.
+.claude/worktrees/
