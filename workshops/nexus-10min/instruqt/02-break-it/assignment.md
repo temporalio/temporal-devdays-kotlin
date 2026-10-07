@@ -1,5 +1,6 @@
 ---
 slug: break-it
+id: kbxm4zf2llvq
 type: challenge
 title: 2. Break It
 teaser: Take the Compliance Worker down, send payments anyway, and watch them wait
@@ -15,29 +16,35 @@ notes:
     An HTTP call would return a connection error and you would be writing retry
     logic. This is not an HTTP call.
 tabs:
-- title: Code
+- id: zlo3zj63wges
+  title: Code
   type: service
   hostname: workshop
   path: /?folder=/root/workshop
   port: 8080
-- title: Payments Worker
+- id: f0el4p87irul
+  title: Payments Worker
   type: terminal
   hostname: workshop
   workdir: /root/workshop/exercise
-- title: Compliance Worker
+- id: xnwlcxrgf8dk
+  title: Compliance Worker
   type: terminal
   hostname: workshop
   cmd: tmux new-session -A -s compliance -c /root/workshop/solution
-- title: Terminal
+- id: o37cdmc5bg5v
+  title: Terminal
   type: terminal
   hostname: workshop
   workdir: /root/workshop/exercise
-- title: Temporal UI
+- id: v4vjd9xhxmte
+  title: Temporal UI
   type: service
   hostname: workshop
   path: /
   port: 8233
-- title: Architecture
+- id: 2gue7iqbwnu1
+  title: Architecture
   type: service
   hostname: workshop
   path: /monolith-architecture.html

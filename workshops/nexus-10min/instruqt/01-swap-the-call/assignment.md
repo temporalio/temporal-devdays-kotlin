@@ -1,5 +1,6 @@
 ---
 slug: swap-the-call
+id: 5ubxyjvualgs
 type: challenge
 title: 1. Swap the Call
 teaser: Replace an in-process Activity call with a call across a Nexus boundary. One
@@ -18,29 +19,35 @@ notes:
 
     You are about to send it one.
 tabs:
-- title: Code
+- id: krldokxxhjgg
+  title: Code
   type: service
   hostname: workshop
   path: /?folder=/root/workshop
   port: 8080
-- title: Payments Worker
+- id: nxbsv33c8g8o
+  title: Payments Worker
   type: terminal
   hostname: workshop
   workdir: /root/workshop/exercise
-- title: Compliance Worker
+- id: xxwxq5tiyw5i
+  title: Compliance Worker
   type: terminal
   hostname: workshop
   cmd: tmux new-session -A -s compliance -c /root/workshop/solution
-- title: Terminal
+- id: min55djtiqvf
+  title: Terminal
   type: terminal
   hostname: workshop
   workdir: /root/workshop/exercise
-- title: Temporal UI
+- id: grd4pezpwzn1
+  title: Temporal UI
   type: service
   hostname: workshop
   path: /
   port: 8233
-- title: Architecture
+- id: daomxt3oepum
+  title: Architecture
   type: service
   hostname: workshop
   path: /monolith-architecture.html
