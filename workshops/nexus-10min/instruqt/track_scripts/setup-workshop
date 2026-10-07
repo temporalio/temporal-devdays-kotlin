@@ -84,20 +84,59 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
-temporal operator nexus endpoint create \
-    --name compliance-endpoint \
-    --target-namespace compliance-namespace \
-    --target-task-queue compliance-risk \
-    --address 127.0.0.1:7233 >/dev/null 2>&1 || true
+# Retry until the Endpoint exists. A create that fails silently leaves every
+# payment stuck in Running with no error the learner can see.
+for i in $(seq 1 30); do
+    temporal operator nexus endpoint get --name compliance-endpoint \
+        --address 127.0.0.1:7233 >/dev/null 2>&1 && break
+    temporal operator nexus endpoint create \
+        --name compliance-endpoint \
+        --target-namespace compliance-namespace \
+        --target-task-queue compliance-risk \
+        --address 127.0.0.1:7233 2>&1 || true
+    sleep 1
+done
+temporal operator nexus endpoint get --name compliance-endpoint --address 127.0.0.1:7233 \
+    || echo "==> WARNING: Nexus Endpoint compliance-endpoint was not created."
 
-# 7. Start the Compliance Worker in tmux. The Compliance Worker tab attaches to
-#    this session, so Ctrl+C there stops the Worker and the shell stays put for
-#    the restart. It runs from solution/ so nothing the learner types in
-#    exercise/ can stop the other team's service from compiling.
+# 7. Install the Compliance Worker helper the challenge scripts share, then use it.
+#
+#    The Worker runs in tmux. The Compliance Worker tab attaches to that session,
+#    so Ctrl+C there stops the Worker and the shell stays put for the restart. It
+#    runs from solution/ so nothing the learner types in exercise/ can stop the
+#    other team's service from compiling.
+#
+#    The helper checks for the Worker's banner, not just the session: a session
+#    whose Gradle run failed looks exactly like a healthy one from outside.
+cat > /usr/local/bin/ensure-compliance-worker <<'HELPER'
+#!/bin/bash
+# Starts the Compliance Worker in tmux session "compliance" unless it is already
+# running, then waits for its banner. Exits 1 and prints the pane if it never
+# comes up.
+set -uo pipefail
 if ! tmux has-session -t compliance 2>/dev/null; then
     tmux new-session -d -s compliance -c /root/workshop/solution
+fi
+if ! pgrep -f "ComplianceWorkerAppKt" >/dev/null; then
+    # Drop the old banner so a previous run cannot satisfy the wait below.
+    tmux send-keys -t compliance 'clear' Enter
+    tmux clear-history -t compliance
     tmux send-keys -t compliance './gradlew complianceWorker' Enter
 fi
+for i in $(seq 1 "${1:-240}"); do
+    if pgrep -f "ComplianceWorkerAppKt" >/dev/null \
+       && tmux capture-pane -p -t compliance -S -300 | grep -q "Compliance Worker started"; then
+        exit 0
+    fi
+    sleep 1
+done
+echo "==> Compliance Worker did not start. tmux pane:"
+tmux capture-pane -p -t compliance -S -300 | grep -v '^$' | tail -40
+exit 1
+HELPER
+chmod +x /usr/local/bin/ensure-compliance-worker
+
+ensure-compliance-worker || echo "==> WARNING: Compliance Worker not up at the end of track setup."
 
 # 8. Wait for the editor to be genuinely ready. Never fatal.
 #    "/" 302-redirects and curl -sf treats that as success, so check the exact URL

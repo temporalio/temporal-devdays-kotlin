@@ -14,9 +14,4 @@ temporal workflow terminate --address "$ADDR" --namespace payments-namespace \
 temporal workflow terminate --address "$ADDR" --namespace compliance-namespace \
     --query 'ExecutionStatus="Running"' --reason "challenge 02 reset" --yes >/dev/null 2>&1 || true
 
-if ! tmux has-session -t compliance 2>/dev/null; then
-    tmux new-session -d -s compliance -c /root/workshop/solution
-fi
-if ! pgrep -f "ComplianceWorkerAppKt" >/dev/null; then
-    tmux send-keys -t compliance './gradlew complianceWorker' Enter
-fi
+ensure-compliance-worker

@@ -6,15 +6,23 @@
 # destroy anything else. Fails loudly: no trailing exit 0.
 set -euxo pipefail
 
+# On failure, show why: the Endpoint, the Compliance pane, and what is running.
+diagnose() {
+    set +e
+    echo "==> Diagnostics"
+    temporal operator nexus endpoint list --address 127.0.0.1:7233
+    pgrep -af "WorkerAppKt"
+    tmux capture-pane -p -t compliance -S -300 | grep -v '^$' | tail -40
+    tail -40 /tmp/payments-worker.log
+}
+trap diagnose ERR
+
 SRC=src/main/kotlin/payments/temporal
 for f in PaymentProcessingWorkflowImpl.kt PaymentsWorkerApp.kt; do
     cp "/root/workshop/solution/$SRC/$f" "/root/workshop/exercise/$SRC/$f"
 done
 
-if ! tmux has-session -t compliance 2>/dev/null; then
-    tmux new-session -d -s compliance -c /root/workshop/solution
-    tmux send-keys -t compliance './gradlew complianceWorker' Enter
-fi
+ensure-compliance-worker
 
 cd /root/workshop/exercise
 ./gradlew --offline -q compileKotlin
