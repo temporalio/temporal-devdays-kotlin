@@ -4,14 +4,15 @@
 set -euxo pipefail
 
 # On failure, show why: the Endpoint, the Compliance pane, and what is running.
-diagnose() {
+# A subshell, so nothing in here can switch off errexit for the rest of the script.
+diagnose() (
     set +e
     echo "==> Diagnostics"
     temporal operator nexus endpoint list --address 127.0.0.1:7233
     pgrep -af "WorkerAppKt"
     tmux capture-pane -p -t compliance -S -300 | grep -v '^$' | tail -40
     tail -40 /tmp/payments-worker.log
-}
+)
 trap diagnose ERR
 
 ADDR=127.0.0.1:7233

@@ -121,7 +121,9 @@ if ! pgrep -f "ComplianceWorkerAppKt" >/dev/null; then
     # Drop the old banner so a previous run cannot satisfy the wait below.
     tmux send-keys -t compliance 'clear' Enter
     tmux clear-history -t compliance
-    tmux send-keys -t compliance './gradlew complianceWorker' Enter
+    # Absolute cd, not tmux -c: on Instruqt the session's shell starts in ~ whatever
+    # -c says, and a relative ./gradlew then fails with "No such file".
+    tmux send-keys -t compliance 'cd /root/workshop/solution && ./gradlew complianceWorker' Enter
 fi
 for i in $(seq 1 "${1:-240}"); do
     if pgrep -f "ComplianceWorkerAppKt" >/dev/null \
