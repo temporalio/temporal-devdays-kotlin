@@ -1,0 +1,11 @@
+# Build context is workshops/nexus-10min/. Keep local build output out of the
+# Sandbox Image. The leading **/ is load-bearing: a bare `build/` matches only
+# <context>/build, not exercise/build.
+**/bin/
+**/build/
+**/.gradle/
+**/.kotlin/
+**/.idea/
+**/*.iml
+**/.DS_Store
+instruqt/

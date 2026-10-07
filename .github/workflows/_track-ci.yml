@@ -1,0 +1,134 @@
+# Reusable build + push pipeline for one Instruqt track.
+# A caller passes `track_dir`, a Workshop folder such as "workshops/nexus-10min".
+#
+# - build-image: rebuilds the sandbox image. Runs only when build_image=true
+#   (the caller sets that when sandbox/** changed, or on manual dispatch).
+# - push-track: `instruqt track push --force` to publish the track definition.
+#   Do not commit checksum-only writeback after CI owns pushes.
+#
+# Auth: the CLI reads the INSTRUQT_TOKEN env var. Set a repo secret named
+# INSTRUQT_TOKEN to an org API key (Instruqt -> Team Settings -> API keys). The
+# destination org comes from `owner:` in track.yml, not a CLI flag.
+#
+# No placeholders to substitute here. Configure everything in the caller.
+name: track-ci (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      track_dir:
+        description: Workshop folder containing instruqt/ and sandbox/, e.g. workshops/nexus-10min.
+        type: string
+        required: true
+      image:
+        description: Full GHCR image ref for the sandbox (no tag).
+        type: string
+        required: true
+      build_image:
+        description: Rebuild the sandbox image.
+        type: boolean
+        default: false
+      push_track:
+        description: Push the track definition to Instruqt.
+        type: boolean
+        default: false
+
+jobs:
+  build-image:
+    if: ${{ inputs.build_image }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          IMAGE: ${{ inputs.image }}
+        run: |
+          if [ "$REF_NAME" = "main" ]; then
+            echo "extra=${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "extra=${IMAGE}:${REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ inputs.track_dir }}
+          file: ${{ inputs.track_dir }}/sandbox/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ steps.tags.outputs.extra }}
+            ${{ inputs.image }}:${{ github.sha }}
+
+  push-track:
+    needs: build-image
+    # Run after the image build when there is one, but also when only the track
+    # definition changed (build-image skipped). Block only if the build FAILED
+    # or was cancelled.
+    if: >-
+      ${{ always()
+          && inputs.push_track
+          && needs.build-image.result != 'failure'
+          && needs.build-image.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # The secrets context is not available in a job-level `if`, so the token
+      # check has to be a step. Without it a repo that has not set INSTRUQT_TOKEN
+      # yet goes red on every merge, which trains people to ignore a red main.
+      # Warn loudly and skip instead. This starts working on its own the moment
+      # someone adds the secret, with no change here.
+      - name: Check for an Instruqt token
+        id: auth
+        env:
+          INSTRUQT_TOKEN: ${{ secrets.INSTRUQT_TOKEN }}
+        run: |
+          if [ -z "${INSTRUQT_TOKEN}" ]; then
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Track not pushed::INSTRUQT_TOKEN is not set, so this run did not publish the track. Add a repo secret named INSTRUQT_TOKEN (Instruqt -> Team Settings -> API keys), or keep pushing by hand with 'instruqt track push'."
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Instruqt CLI
+        if: steps.auth.outputs.has_token == 'true'
+        run: |
+          curl -fsSL \
+            https://github.com/instruqt/cli/releases/latest/download/instruqt-linux.zip \
+            -o instruqt.zip
+          unzip -q instruqt.zip
+          sudo install -m 0755 instruqt /usr/local/bin/instruqt
+          instruqt version
+
+      - name: Validate track
+        if: steps.auth.outputs.has_token == 'true'
+        working-directory: ${{ inputs.track_dir }}/instruqt
+        env:
+          INSTRUQT_TOKEN: ${{ secrets.INSTRUQT_TOKEN }}
+        run: instruqt track validate
+
+      - name: Push track to Instruqt
+        if: steps.auth.outputs.has_token == 'true'
+        working-directory: ${{ inputs.track_dir }}/instruqt
+        env:
+          INSTRUQT_TOKEN: ${{ secrets.INSTRUQT_TOKEN }}
+        run: instruqt track push --force
+
+      - name: Note checksum writeback policy
+        if: steps.auth.outputs.has_token == 'true'
+        run: echo "Track pushed with --force. Do not commit checksum-only writeback from CI."

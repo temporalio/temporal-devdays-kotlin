@@ -1,0 +1,5 @@
+#!/bin/bash
+# ABOUTME: Challenge 02 cleanup. Nothing to hand on: this is the last challenge.
+set -euo pipefail
+
+pkill -f "PaymentsWorkerAppKt" || true

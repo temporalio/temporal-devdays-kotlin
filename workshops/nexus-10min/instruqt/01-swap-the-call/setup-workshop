@@ -1,0 +1,9 @@
+#!/bin/bash
+# ABOUTME: Challenge 01 setup. Makes sure the Compliance Worker is running, since
+# the whole challenge depends on someone answering the Nexus Operation.
+set -euxo pipefail
+
+if ! tmux has-session -t compliance 2>/dev/null; then
+    tmux new-session -d -s compliance -c /root/workshop/solution
+    tmux send-keys -t compliance './gradlew complianceWorker' Enter
+fi

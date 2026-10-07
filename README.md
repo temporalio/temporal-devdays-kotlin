@@ -9,6 +9,7 @@ All created via code. Use or repurpose the content to fit your next Dev Day!
 
 | Workshop | Level | Stack | Deck | Code + Track | Lab | Duration | Author | Model | Deck cost ($) | Track cost ($) |
 |---|---|---|---|---|---|--:|---|---|--:|--:|
+| Nexus | Advanced | Kotlin · Nexus | Pending | [`workshops/nexus-10min/`](workshops/nexus-10min/) | Pending | 10 min | Nikolay Advolodkin | Opus 5.5 (100%) | Pending | [$30.62](docs/authoring/nexus-10min-track.md) |
 | Decouple a Monolith with Nexus | Advanced | Kotlin · Nexus | [`edu-nexus-code/kotlin/slides`](https://github.com/temporalio/edu-nexus-code/tree/main/kotlin/slides) | [`edu-nexus-code/kotlin`](https://github.com/temporalio/edu-nexus-code/tree/main/kotlin) | Pending | 2 h | Nikolay Advolodkin | — | — | — |
 
 A Workshop created for this program lives here, under `workshops/<slug>/` with
