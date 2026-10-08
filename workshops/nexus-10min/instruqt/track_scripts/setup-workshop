@@ -1,0 +1,160 @@
+#!/bin/bash
+# ABOUTME: Track-level setup. Runs once when the attendee enters the track.
+# Starts the editor and diagram, stages the workshop source, starts the dev
+# server, creates both Namespaces and the Nexus Endpoint, and starts the
+# Compliance team's Worker in a tmux session the Compliance Worker tab attaches to.
+#
+# Ten minutes leaves no room for setup typing, so everything that is not the
+# lesson is done here. The learner's work is the call site, not the plumbing.
+#
+# Ordering matters. The editor starts BEFORE any Temporal work and is never gated
+# on it: a slow dev server must not take the editor down with it.
+set -uo pipefail
+
+# 1. Wait for Instruqt host bootstrap.
+until [ -f /opt/instruqt/bootstrap/host-bootstrap-completed ]; do
+    sleep 1
+done
+
+# 2. Stage the writable working tree. /opt/workshop stays pristine.
+if [ ! -d /root/workshop ]; then
+    cp -r /opt/workshop /root/workshop
+fi
+
+# 3. Start ONE code-server, rooted at the folder holding exercise/ and solution/.
+#    One editor tab, first in every challenge, so its iframe always has real
+#    dimensions at load. Port 8080: Instruqt's proxy could not reach 8443.
+if ! curl -sf -o /dev/null "http://127.0.0.1:8080/" 2>/dev/null; then
+    nohup code-server \
+        --bind-addr "0.0.0.0:8080" \
+        --auth none \
+        --disable-telemetry \
+        --disable-update-check \
+        --user-data-dir /root/.cs \
+        --extensions-dir /root/.cs-extensions \
+        /root/workshop > /tmp/code-server-8080.log 2>&1 &
+    disown || true
+fi
+
+# 3b. Serve the architecture diagram on 8090. jwebserver ships with the JDK.
+if ! curl -sf -o /dev/null "http://127.0.0.1:8090/" 2>/dev/null; then
+    nohup jwebserver -b 0.0.0.0 -p 8090 -d /opt/diagrams > /tmp/jwebserver.log 2>&1 &
+    disown || true
+fi
+
+# 4. Start the Temporal dev server. --ip 0.0.0.0 so the UI tab can reach 8233.
+if ! curl -sf http://127.0.0.1:8233 >/dev/null 2>&1; then
+    nohup temporal server start-dev \
+        --ip 0.0.0.0 \
+        --port 7233 \
+        --ui-port 8233 \
+        --db-filename /root/temporal.db \
+        --log-level warn \
+        > /tmp/temporal-server.log 2>&1 &
+    disown || true
+fi
+
+# 5. Wait for Temporal health. Warn on failure, do not exit: the editor is up.
+TEMPORAL_UP=0
+for i in $(seq 1 120); do
+    if temporal operator cluster health --address 127.0.0.1:7233 >/dev/null 2>&1; then
+        TEMPORAL_UP=1
+        break
+    fi
+    sleep 1
+done
+if [ "$TEMPORAL_UP" -ne 1 ]; then
+    echo "==> WARNING: Temporal dev server did not become healthy in 120s."
+    tail -30 /tmp/temporal-server.log 2>/dev/null
+fi
+
+# 6. One Namespace per team, and the Endpoint that joins them.
+temporal operator namespace create --namespace payments-namespace \
+    --address 127.0.0.1:7233 >/dev/null 2>&1 || true
+temporal operator namespace create --namespace compliance-namespace \
+    --address 127.0.0.1:7233 >/dev/null 2>&1 || true
+
+for i in $(seq 1 30); do
+    if temporal operator namespace describe --namespace payments-namespace \
+         --address 127.0.0.1:7233 >/dev/null 2>&1 \
+       && temporal operator namespace describe --namespace compliance-namespace \
+         --address 127.0.0.1:7233 >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
+# Retry until the Endpoint exists. A create that fails silently leaves every
+# payment stuck in Running with no error the learner can see.
+for i in $(seq 1 30); do
+    temporal operator nexus endpoint get --name compliance-endpoint \
+        --address 127.0.0.1:7233 >/dev/null 2>&1 && break
+    temporal operator nexus endpoint create \
+        --name compliance-endpoint \
+        --target-namespace compliance-namespace \
+        --target-task-queue compliance-risk \
+        --address 127.0.0.1:7233 2>&1 || true
+    sleep 1
+done
+temporal operator nexus endpoint get --name compliance-endpoint --address 127.0.0.1:7233 \
+    || echo "==> WARNING: Nexus Endpoint compliance-endpoint was not created."
+
+# 7. Install the Compliance Worker helper the challenge scripts share, then use it.
+#
+#    The Worker runs in tmux. The Compliance Worker tab attaches to that session,
+#    so Ctrl+C there stops the Worker and the shell stays put for the restart. It
+#    runs from solution/ so nothing the learner types in exercise/ can stop the
+#    other team's service from compiling.
+#
+#    The helper checks for the Worker's banner, not just the session: a session
+#    whose Gradle run failed looks exactly like a healthy one from outside.
+cat > /usr/local/bin/ensure-compliance-worker <<'HELPER'
+#!/bin/bash
+# Starts the Compliance Worker in tmux session "compliance" unless it is already
+# running, then waits for its banner. Exits 1 and prints the pane if it never
+# comes up.
+set -uo pipefail
+if ! tmux has-session -t compliance 2>/dev/null; then
+    tmux new-session -d -s compliance -c /root/workshop/solution
+fi
+if ! pgrep -f "ComplianceWorkerAppKt" >/dev/null; then
+    # Drop the old banner so a previous run cannot satisfy the wait below.
+    tmux send-keys -t compliance 'clear' Enter
+    tmux clear-history -t compliance
+    # Absolute cd, not tmux -c: on Instruqt the session's shell starts in ~ whatever
+    # -c says, and a relative ./gradlew then fails with "No such file".
+    tmux send-keys -t compliance 'cd /root/workshop/solution && ./gradlew complianceWorker' Enter
+fi
+for i in $(seq 1 "${1:-240}"); do
+    if pgrep -f "ComplianceWorkerAppKt" >/dev/null \
+       && tmux capture-pane -p -t compliance -S -300 | grep -q "Compliance Worker started"; then
+        exit 0
+    fi
+    sleep 1
+done
+echo "==> Compliance Worker did not start. tmux pane:"
+tmux capture-pane -p -t compliance -S -300 | grep -v '^$' | tail -40
+exit 1
+HELPER
+chmod +x /usr/local/bin/ensure-compliance-worker
+
+ensure-compliance-worker || echo "==> WARNING: Compliance Worker not up at the end of track setup."
+
+# 8. Wait for the editor to be genuinely ready. Never fatal.
+#    "/" 302-redirects and curl -sf treats that as success, so check the exact URL
+#    the tab opens returns 200, plus the extension host log line.
+code_server_ready() {
+    [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+        "http://127.0.0.1:8080/?folder=/root/workshop" 2>/dev/null)" = "200" ] \
+        && grep -q "Extension host agent started" /tmp/code-server-8080.log 2>/dev/null
+}
+
+for i in $(seq 1 90); do
+    code_server_ready && break
+    sleep 1
+done
+
+code_server_ready \
+    || { echo "==> WARNING: code-server 8080 not ready."; tail -20 /tmp/code-server-8080.log 2>/dev/null; }
+
+echo "==> Track setup complete."

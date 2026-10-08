@@ -1,0 +1,75 @@
+#!/bin/bash
+# ABOUTME: Challenge 01 check. Passes once a payment has gone through Nexus.
+#
+# Asserts on final state, not on output: a PaymentProcessingWorkflow that completed
+# with a NexusOperationCompleted event in its history. The unfinished Exercise
+# still completes payments (it is the monolith), so "completed" alone proves
+# nothing; the Nexus event is the proof.
+#
+# Before that, it looks for the one silent failure: a mistyped Endpoint name does
+# not fail the Workflow. The server rejects the command and the Workflow task
+# retries forever, with nothing in the starter's output to say why.
+set -uo pipefail
+
+ADDR="127.0.0.1:7233"
+NS="payments-namespace"
+
+RUNNING=$(temporal workflow list --address "$ADDR" --namespace "$NS" \
+    --query 'WorkflowType="PaymentProcessingWorkflow" AND ExecutionStatus="Running"' \
+    --output json 2>/dev/null | jq -r '.[].execution.workflowId' 2>/dev/null)
+
+for WID in $RUNNING; do
+  ATTEMPT=$(temporal workflow describe --address "$ADDR" --namespace "$NS" \
+      --workflow-id "$WID" --output json 2>/dev/null \
+      | jq -r '.pendingWorkflowTask.attempt // 0' 2>/dev/null)
+
+  # A healthy Workflow waiting on a Nexus Operation sits at attempt 1.
+  if [ "${ATTEMPT:-0}" -gt 2 ]; then
+    fail-message "$WID is stuck retrying its Workflow task (attempt $ATTEMPT).
+
+That is the signature of an Endpoint name that does not match. Look in the
+Payments Worker tab for:
+
+  INVALID_ARGUMENT: BadScheduleNexusOperationAttributes: endpoint \"...\" not found
+
+The Endpoint is compliance-endpoint:
+
+  temporal operator nexus endpoint list"
+    exit 1
+  fi
+done
+
+COMPLETED=$(temporal workflow list --address "$ADDR" --namespace "$NS" \
+    --query 'WorkflowType="PaymentProcessingWorkflow" AND ExecutionStatus="Completed"' \
+    --output json 2>/dev/null | jq -r '.[].execution | "\(.workflowId) \(.runId)"' 2>/dev/null)
+
+if [ -z "$COMPLETED" ]; then
+  fail-message "No payment has completed yet.
+
+Start the Payments Worker in the Payments Worker tab, then run the starter in the
+Terminal tab:
+
+  ./gradlew starter"
+  exit 1
+fi
+
+while read -r WID RID; do
+  [ -z "$WID" ] && continue
+  if temporal workflow show --address "$ADDR" --namespace "$NS" \
+       --workflow-id "$WID" --run-id "$RID" --output json 2>/dev/null \
+     | jq -e '[.events[] | select(.eventType == "EVENT_TYPE_NEXUS_OPERATION_COMPLETED" or .eventType == "NexusOperationCompleted")] | length > 0' \
+       >/dev/null 2>&1; then
+    exit 0
+  fi
+done <<< "$COMPLETED"
+
+fail-message "Payments completed, but the compliance check ran as an Activity, not over Nexus.
+
+Finish all three TODOs:
+  1a  exercise/.../PaymentProcessingWorkflowImpl.kt   Nexus Service stub
+  1b  same file, call site                            complianceActivity -> complianceService
+  1c  exercise/.../PaymentsWorkerApp.kt               delete the ComplianceActivityImpl line
+
+Then stop the Payments Worker with Ctrl+C, start it again so it picks up your
+changes, and rerun the starter."
+exit 1

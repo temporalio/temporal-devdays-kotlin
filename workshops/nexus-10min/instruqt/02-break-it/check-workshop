@@ -1,0 +1,8 @@
+#!/bin/bash
+# ABOUTME: Challenge 02 check. Always passes.
+#
+# Nothing here can fail silently: if Compliance is still down, the Temporal UI
+# shows the payments Running, which is the lesson rather than a defect. Gating
+# progression would only push a stuck learner to Skip.
+set -euo pipefail
+exit 0
