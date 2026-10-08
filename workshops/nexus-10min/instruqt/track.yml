@@ -24,6 +24,7 @@ owner: temporal
 developers:
 - nikolay.advolodkin@temporal.io
 skipping_enabled: true
+maintenance: false
 idle_timeout: 1800
 timelimit: 1800
 lab_config:
