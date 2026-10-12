@@ -1,0 +1,17 @@
+#!/bin/bash
+# ABOUTME: Challenge 02 setup. Clean slate so the outage demo is deterministic.
+#
+# Terminates any payment still Running from challenge 01, so the starter's fixed
+# Workflow IDs start fresh runs, and makes sure the Compliance Worker is up for
+# the learner to take down.
+set -euxo pipefail
+
+pkill -f "PaymentsWorkerAppKt" || true
+
+ADDR=127.0.0.1:7233
+temporal workflow terminate --address "$ADDR" --namespace payments-namespace \
+    --query 'ExecutionStatus="Running"' --reason "challenge 02 reset" --yes >/dev/null 2>&1 || true
+temporal workflow terminate --address "$ADDR" --namespace compliance-namespace \
+    --query 'ExecutionStatus="Running"' --reason "challenge 02 reset" --yes >/dev/null 2>&1 || true
+
+ensure-compliance-worker

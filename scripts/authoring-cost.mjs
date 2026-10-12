@@ -24,8 +24,10 @@ import { homedir } from 'node:os';
 
 // $ per million tokens. Base rates are published; the cache multipliers are the
 // standard Anthropic ratios (1h write 2x, 5m write 1.25x, read 0.1x) rather than
-// numbers read off a rate card, so treat cache dollars as approximate.
+// numbers read off a rate card, so treat cache dollars as approximate. A model
+// whose published cache-read rate breaks the 0.1x ratio sets `read` ($/MTok).
 const RATES = {
+  'claude-opus-5-5':  { in: 4, out: 20, read: 0.2 },
   'claude-opus-5':    { in: 5, out: 25 },
   'claude-sonnet-5':  { in: 2, out: 10 },
   'claude-haiku-4-5': { in: 1, out: 5  },
@@ -102,7 +104,7 @@ const costOf = (model, c) => {
   if (!r) return null;
   return (c.input / 1e6) * r.in + (c.output / 1e6) * r.out
     + (c.w1h / 1e6) * r.in * CACHE_1H + (c.w5m / 1e6) * r.in * CACHE_5M
-    + (c.read / 1e6) * r.in * CACHE_READ;
+    + (c.read / 1e6) * (r.read ?? r.in * CACHE_READ);
 };
 const activeMs = (stamps) => {
   const s = [...stamps].sort((a, b) => a - b);

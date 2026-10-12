@@ -1,0 +1,43 @@
+# Pushes the Nexus 10-minute Track definition on merge to main.
+#
+# CI deliberately does NOT build the Sandbox Image.
+#
+# The image lives at ghcr.io/nadvolod/devdays-kotlin-nexus-10min-sandbox, a
+# personal namespace. This repo's GITHUB_TOKEN cannot write there, so a build job
+# would fail on every merge. The image is built by hand and pinned by digest in
+# workshops/nexus-10min/instruqt/config.yml; see workshops/nexus-10min/sandbox/Dockerfile
+# for the commands.
+#
+# Because the digest is pinned, a source change only reaches attendees once the
+# re-pin is committed, and the re-pin lives under instruqt/. That is why this
+# workflow watches instruqt/ alone.
+#
+# Required once: a repo secret named INSTRUQT_TOKEN (Instruqt org API key).
+# Without it the push step warns and skips instead of failing.
+name: Publish Nexus 10-minute Track
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workshops/nexus-10min/instruqt/**"
+      - ".github/workflows/_track-ci.yml"
+      - ".github/workflows/nexus-10min-track.yml"
+  workflow_dispatch:
+
+jobs:
+  ci:
+    # packages: write is required even with build_image false. A caller's
+    # permissions are the ceiling for every job in the called workflow, and GitHub
+    # checks that ceiling before any `if:` runs, so read-only fails at startup.
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/_track-ci.yml
+    with:
+      track_dir: "workshops/nexus-10min"
+      # Unused while build_image is false.
+      image: ghcr.io/nadvolod/devdays-kotlin-nexus-10min-sandbox
+      build_image: false
+      push_track: true
+    secrets: inherit

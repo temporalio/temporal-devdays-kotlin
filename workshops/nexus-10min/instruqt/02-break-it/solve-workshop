@@ -1,0 +1,56 @@
+#!/bin/bash
+# ABOUTME: Challenge 02 solve. Runs the outage end to end: Compliance down,
+# payments sent, Compliance back, payments drained. Fails loudly if they do not.
+set -euxo pipefail
+
+# On failure, show why: the Endpoint, the Compliance pane, and what is running.
+# A subshell, so nothing in here can switch off errexit for the rest of the script.
+diagnose() (
+    set +e
+    echo "==> Diagnostics"
+    temporal operator nexus endpoint list --address 127.0.0.1:7233
+    pgrep -af "WorkerAppKt"
+    tmux capture-pane -p -t compliance -S -300 | grep -v '^$' | tail -40
+    tail -40 /tmp/payments-worker.log
+)
+trap diagnose ERR
+
+ADDR=127.0.0.1:7233
+SRC=src/main/kotlin/payments/temporal
+
+# Skip from challenge 01 may have left the Exercise unfinished.
+for f in PaymentProcessingWorkflowImpl.kt PaymentsWorkerApp.kt; do
+    cp "/root/workshop/solution/$SRC/$f" "/root/workshop/exercise/$SRC/$f"
+done
+
+cd /root/workshop/exercise
+./gradlew --offline -q compileKotlin
+
+pkill -f "PaymentsWorkerAppKt" || true
+sleep 1
+nohup ./gradlew paymentsWorker --console=plain -q > /tmp/payments-worker.log 2>&1 &
+for i in $(seq 1 120); do
+    grep -q "Payments Worker started" /tmp/payments-worker.log 2>/dev/null && break
+    sleep 1
+done
+
+# Compliance down.
+pkill -f "ComplianceWorkerAppKt" || true
+sleep 2
+
+# Payments sent while it is down. The starter exits 0 after its deadline.
+./gradlew starter --console=plain -q > /tmp/starter.log 2>&1
+cat /tmp/starter.log
+grep -q "STILL RUNNING" /tmp/starter.log
+
+# Compliance back, in the same tmux session the tab attaches to.
+ensure-compliance-worker
+
+for i in $(seq 1 180); do
+    RUNNING=$(temporal workflow list --address "$ADDR" --namespace payments-namespace \
+        --query 'WorkflowType="PaymentProcessingWorkflow" AND ExecutionStatus="Running"' \
+        --output json | jq 'length')
+    [ "$RUNNING" = "0" ] && break
+    sleep 1
+done
+[ "$RUNNING" = "0" ]

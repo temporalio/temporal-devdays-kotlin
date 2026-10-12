@@ -1,0 +1,6 @@
+#!/bin/bash
+# ABOUTME: Challenge 01 setup. Makes sure the Compliance Worker is running, since
+# the whole challenge depends on someone answering the Nexus Operation.
+set -euxo pipefail
+
+ensure-compliance-worker

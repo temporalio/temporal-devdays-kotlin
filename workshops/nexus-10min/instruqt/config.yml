@@ -1,0 +1,17 @@
+version: "3"
+containers:
+- name: workshop
+  # Pinned by digest, not :latest. A moving tag can boot a cached older image.
+  # Re-pin after every image rebuild with:
+  #   docker buildx imagetools inspect ghcr.io/nadvolod/devdays-kotlin-nexus-10min-sandbox:latest --format "{{.Manifest.Digest}}"
+  # See ../sandbox/Dockerfile.
+  image: ghcr.io/nadvolod/devdays-kotlin-nexus-10min-sandbox@sha256:7df608b527a286b0dc344b6ee2784dfa3e647e05ef4e531fbd7f7fcbedee7bb3
+  shell: /bin/bash
+  # Two JVM Workers, Gradle daemons, a dev server, and one code-server.
+  memory: 8192
+  # Every port a challenge tab points at MUST be listed here. Instruqt's proxy
+  # cannot reach an undeclared port, and the tab shows "Please wait" forever.
+  ports:
+  - 8233   # Temporal UI
+  - 8080   # code-server
+  - 8090   # architecture diagram (jwebserver)

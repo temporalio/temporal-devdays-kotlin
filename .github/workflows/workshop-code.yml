@@ -1,0 +1,49 @@
+name: Workshop code
+
+# Solutions are proven (AGENTS.md): every Solution's tests pass, and every
+# Exercise still compiles, so the Sandbox Image build cannot be the first place a
+# broken tree shows up.
+on:
+  pull_request:
+    paths:
+      - "workshops/**"
+      - ".github/workflows/workshop-code.yml"
+  push:
+    branches: [main]
+    paths:
+      - "workshops/**"
+      - ".github/workflows/workshop-code.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    outputs:
+      workshops: ${{ steps.find.outputs.workshops }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - id: find
+        run: |
+          echo "workshops=$(ls -d workshops/*/ | xargs -n1 basename | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: list
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workshop: ${{ fromJson(needs.list.outputs.workshops) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Solution tests pass
+        working-directory: workshops/${{ matrix.workshop }}/solution
+        run: ./gradlew --no-daemon test
+      - name: Exercise compiles
+        working-directory: workshops/${{ matrix.workshop }}/exercise
+        run: ./gradlew --no-daemon compileKotlin compileTestKotlin

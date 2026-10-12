@@ -1,0 +1,41 @@
+#!/bin/bash
+# ABOUTME: Challenge 01 solve. Applies the two TODO files from the Solution, then
+# runs the Payments Worker and the starter so the check sees a Nexus payment.
+#
+# Overwrites only the two files the learner edits in this track, so Skip cannot
+# destroy anything else. Fails loudly: no trailing exit 0.
+set -euxo pipefail
+
+# On failure, show why: the Endpoint, the Compliance pane, and what is running.
+# A subshell, so nothing in here can switch off errexit for the rest of the script.
+diagnose() (
+    set +e
+    echo "==> Diagnostics"
+    temporal operator nexus endpoint list --address 127.0.0.1:7233
+    pgrep -af "WorkerAppKt"
+    tmux capture-pane -p -t compliance -S -300 | grep -v '^$' | tail -40
+    tail -40 /tmp/payments-worker.log
+)
+trap diagnose ERR
+
+SRC=src/main/kotlin/payments/temporal
+for f in PaymentProcessingWorkflowImpl.kt PaymentsWorkerApp.kt; do
+    cp "/root/workshop/solution/$SRC/$f" "/root/workshop/exercise/$SRC/$f"
+done
+
+ensure-compliance-worker
+
+cd /root/workshop/exercise
+./gradlew --offline -q compileKotlin
+
+pkill -f "PaymentsWorkerAppKt" || true
+sleep 1
+nohup ./gradlew paymentsWorker --console=plain -q > /tmp/payments-worker.log 2>&1 &
+for i in $(seq 1 120); do
+    grep -q "Payments Worker started" /tmp/payments-worker.log 2>/dev/null && break
+    sleep 1
+done
+
+./gradlew starter --console=plain -q > /tmp/starter.log 2>&1
+cat /tmp/starter.log
+grep -q "Both transactions resolved" /tmp/starter.log
